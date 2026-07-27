@@ -1,6 +1,26 @@
 const EXERCISES = [
     // EASY - Simple if statements
-    '1A.c'
+    '1A.c',
+    '1B.c',
+    '1C.c',
+    '1D.c',
+    '1E.c',
+    '1F.c',
+    '1G.c',
+    '1H.c',
+    '1I.c',
+    '1J.c',
+
+    '2A.c',
+    '2B.c',
+    '2C.c',
+    '2D.c',
+    '2E.c',
+    '2F.c',
+    '2G.c',
+    '2H.c',
+    '2I.c',
+    '2J.c'
 ];
 
 let studentDatabase = [];
