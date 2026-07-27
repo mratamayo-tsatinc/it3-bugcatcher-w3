@@ -1,41 +1,6 @@
 const EXERCISES = [
     // EASY - Simple if statements
-    'Book Pages.c',
-    'Item in Stock.c',
-    'One Week.c',
-    'Overspeed.c',
-    'Participant Count.c',
-    
-    // MEDIUM - If-else statements
-    //'Age_Verification.c',
-    'Exam_Pass_Fail.c',
-    'Grade_Pass_Fail.c',
-    'Odd_Even_Checker.c',
-    'Password_Strength_Check.c',
-    'Temperature_Freezing_Check.c',
-    'Voter_Eligibility.c',
-    
-    // MEDIUM-HARD - If-else with logical operators
-    //'Loan_Approval.c',
-    'Login_Validation.c',
-    //'Scholarship_Eligibility.c',
-    //'Senior_Discount.c',
-    
-    // HARD - If-else-if-else with multiple conditions
-    'BMI_Category.c',
-    'Discount_Calculator.c',
-    //'Discount_Tier_System.c',
-    //'Employee_Tier_Classification.c',
-    'Number_Classification.c',
-    'Weather_Classification.c',
-    'Account_Lock_Status.c',
-    
-    // HARDEST - Switch statements
-    'Calculator_Operation.c',
-    'Day_of_Week.c',
-    'Direction_Navigator.c',
-    'Month_Days.c',
-    'Traffic_Light.c'
+    '1A.c'
 ];
 
 let studentDatabase = [];
