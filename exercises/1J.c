@@ -1,11 +1,11 @@
-#Include <stdio.h>
+#[[Include]] <stdio.h>
 
-Int main() {
+[[Int]] main() {
     printf("        @       \n");
     printf("     @  @  @    \n");
     printf("  @  @  @  @  @ \n");
     printf("     @  @  @    \n");
-    Printf("        @       \n");
+    [[Printf]]("        @       \n");
 
-    Return 0;
+    [[Return]] 0;
 }
