@@ -20,7 +20,18 @@ const EXERCISES = [
     '2G.c',
     '2H.c',
     '2I.c',
-    '2J.c'
+    '2J.c',
+
+    '3A.c',
+    '3B.c',
+    '3C.c',
+    '3D.c',
+    '3E.c',
+    '3F.c',
+    '3G.c',
+    '3H.c',
+    '3I.c',
+    '3J.c'
 ];
 
 let studentDatabase = [];
