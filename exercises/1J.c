@@ -1,11 +1,11 @@
-#include <stdio.h>
+#Include <stdio.h>
 
-int main() {
-    print("        @       \n");
-    print("     @  @  @    \n");
-    print("  @  @  @  @  @ \n");
-    print("     @  @  @    \n");
-    print("        @       \n");
+Int main() {
+    printf("        @       \n");
+    printf("     @  @  @    \n");
+    printf("  @  @  @  @  @ \n");
+    printf("     @  @  @    \n");
+    Printf("        @       \n");
 
-    return 0;
+    Return 0;
 }
