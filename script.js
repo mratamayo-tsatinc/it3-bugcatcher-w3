@@ -45,6 +45,10 @@ let timerInterval = null;
 let scoreModalShown = true;
 // Track whether we've already shown the full-course celebration
 let totalCelebrated = true;
+// ISO timestamp marking when the current exam session began (used to persist/resume the timer)
+let examStartTime = null;
+
+const EXAM_STORAGE_PREFIX = 'bugcatcher_exam_';
 
 window.onload = async function() {
     try {
@@ -57,6 +61,56 @@ window.onload = async function() {
         });
     } catch (err) { console.error("Database failed to load."); }
 };
+
+    // EXAM PERSISTENCE (only used while appMode === 'exam')
+    function getExamStorageKey(email) {
+        return `${EXAM_STORAGE_PREFIX}${email}`;
+    }
+
+    // Saves the current exam session (answers, scores, lock state, timer start) to localStorage
+    // so a page refresh / accidental close doesn't lose progress or reset the clock.
+    function saveExamState() {
+        if (appMode !== 'exam' || !currentUser) return;
+        try {
+            const serializedExercises = {};
+            for (const file in exerciseData) {
+                const d = exerciseData[file];
+                serializedExercises[file] = {
+                    userProgress: d.userProgress,
+                    lastScore: d.lastScore,
+                    locked: d.locked,
+                    lastVerifiedAt: d.lastVerifiedAt
+                };
+            }
+            const state = {
+                email: currentUser,
+                examMinutes,
+                examStartTime,
+                exerciseData: serializedExercises,
+                scoreModalShown,
+                totalCelebrated,
+                savedAt: new Date().toISOString()
+            };
+            localStorage.setItem(getExamStorageKey(currentUser), JSON.stringify(state));
+        } catch (err) {
+            console.error("Failed to save exam progress.", err);
+        }
+    }
+
+    function loadExamState(email) {
+        try {
+            const raw = localStorage.getItem(getExamStorageKey(email));
+            if (!raw) return null;
+            return JSON.parse(raw);
+        } catch (err) {
+            console.error("Failed to load saved exam progress.", err);
+            return null;
+        }
+    }
+
+    function clearExamState(email) {
+        try { localStorage.removeItem(getExamStorageKey(email)); } catch (err) { /* ignore */ }
+    }
 
     // SETTINGS & MODAL HANDLERS
     function openSettingsModal() {
@@ -93,10 +147,14 @@ window.onload = async function() {
         // if user already logged in, apply timer visibility/behavior immediately
         if (currentUser) {
             if (appMode === 'exam') {
+                examStartTime = new Date().toISOString();
                 startTimer(examMinutes);
+                saveExamState();
             } else {
                 stopTimer();
                 const display = document.getElementById('timerDisplay'); if (display) display.style.display = 'none';
+                // Leaving exam mode ends the persisted session for this student
+                clearExamState(currentUser);
             }
         }
         closeSettingsModal();
@@ -113,8 +171,14 @@ window.onload = async function() {
 
     // TIMER
     function startTimer(minutes) {
+        startTimerSeconds(Math.max(0, Math.floor(minutes) * 60));
+    }
+
+    // Starts the countdown from an explicit number of seconds (used when resuming a
+    // persisted exam session after a reload, where less than the full duration remains).
+    function startTimerSeconds(seconds) {
         stopTimer();
-        timerSeconds = Math.max(0, Math.floor(minutes) * 60);
+        timerSeconds = Math.max(0, Math.floor(seconds));
         updateTimerUI();
         const display = document.getElementById('timerDisplay'); if (display) display.style.display = 'inline-flex';
         timerInterval = setInterval(() => {
@@ -125,6 +189,28 @@ window.onload = async function() {
                 onTimerExpire();
             }
         }, 1000);
+    }
+
+    // Resumes the exam timer based on real elapsed time since examStartTime, so that
+    // reloading or reopening the page cannot be used to "reset the clock".
+    function resumeExamTimer() {
+        if (!examStartTime) {
+            examStartTime = new Date().toISOString();
+        }
+        const startMs = new Date(examStartTime).getTime();
+        const elapsedSec = Math.floor((Date.now() - startMs) / 1000);
+        const totalSec = Math.max(0, Math.floor(examMinutes) * 60);
+        const remaining = totalSec - elapsedSec;
+
+        if (remaining <= 0) {
+            // Time ran out while the student was away/reloading
+            timerSeconds = 0;
+            updateTimerUI();
+            const display = document.getElementById('timerDisplay'); if (display) display.style.display = 'inline-flex';
+            onTimerExpire();
+            return;
+        }
+        startTimerSeconds(remaining);
     }
 
     function stopTimer() {
@@ -156,6 +242,7 @@ window.onload = async function() {
         }
         updateTotalScore();
         showScoreModal('time');
+        saveExamState();
     }
 
 function handleLogin() {
@@ -169,10 +256,27 @@ function handleLogin() {
         document.getElementById('loginOverlay').style.display = 'none';
         document.getElementById('appContainer').style.display = 'flex';
         document.getElementById('userDisplay').textContent = email;
-        loadAllExercises();
-        // start exam timer if in exam mode
+
         if (appMode === 'exam') {
-            startTimer(examMinutes);
+            // Look for a previously saved session for this student (e.g. after a refresh
+            // or accidental tab close) and resume it instead of starting over.
+            const saved = loadExamState(email);
+            if (saved && saved.examStartTime) {
+                examMinutes = saved.examMinutes || examMinutes;
+                examStartTime = saved.examStartTime;
+                scoreModalShown = !!saved.scoreModalShown;
+                totalCelebrated = !!saved.totalCelebrated;
+            } else {
+                examStartTime = new Date().toISOString();
+            }
+        }
+
+        loadAllExercises();
+
+        // start/resume exam timer if in exam mode
+        if (appMode === 'exam') {
+            resumeExamTimer();
+            saveExamState();
         } else {
             const display = document.getElementById('timerDisplay'); if (display) display.style.display = 'none';
         }
@@ -186,20 +290,39 @@ async function loadAllExercises() {
     list.innerHTML = ""; 
     document.getElementById('loader').style.display = 'block';
 
+    // Pull any previously saved exam progress for this student so it can be restored
+    // into the freshly-parsed exercise data below.
+    const savedExam = (appMode === 'exam' && currentUser) ? loadExamState(currentUser) : null;
+
     for (const fileName of EXERCISES) {
         try {
             const res = await fetch('./exercises/' + fileName);
             const code = await res.text();
             exerciseData[fileName] = parseJavaCode(code);
 
+            if (savedExam && savedExam.exerciseData && savedExam.exerciseData[fileName]) {
+                const saved = savedExam.exerciseData[fileName];
+                const d = exerciseData[fileName];
+                if (Array.isArray(saved.userProgress) && saved.userProgress.length === d.userProgress.length) {
+                    d.userProgress = saved.userProgress;
+                }
+                d.lastScore = saved.lastScore || 0;
+                d.locked = !!saved.locked;
+                d.lastVerifiedAt = saved.lastVerifiedAt || null;
+            }
+
             const li = document.createElement('li');
             const safeId = fileName.replace(/\./g, '-');
             li.id = `nav-${safeId}`;
-            
+            const restoredScore = exerciseData[fileName].lastScore || 0;
+
             li.innerHTML = `
                 <span>${fileName.replace('.java', '')}</span>
-                <span class="nav-score" id="score-${safeId}">0/${exerciseData[fileName].wrongCount}</span>
+                <span class="nav-score" id="score-${safeId}">${restoredScore}/${exerciseData[fileName].wrongCount}</span>
             `;
+            if (exerciseData[fileName].locked && exerciseData[fileName].wrongCount > 0 && restoredScore === exerciseData[fileName].wrongCount) {
+                li.querySelector('.nav-score').classList.add('completed-score');
+            }
             
             li.onclick = () => switchExercise(fileName, li);
             list.appendChild(li);
@@ -272,6 +395,7 @@ function resetCurrentExercise() {
 
     // update total accumulated score
     updateTotalScore();
+    saveExamState();
 }
 
 function updateTotalScore() {
@@ -539,6 +663,8 @@ function toggleToken(index, checkbox) {
             cb.parentElement.classList.remove('disabled');
         }
     });
+
+    saveExamState();
 }
 
 function switchExercise(name, el) {
@@ -569,6 +695,20 @@ function switchExercise(name, el) {
     const selectedCount = exerciseData[name].userProgress.reduce((s, v) => s + (v ? 1 : 0), 0);
     const selectedEl = document.getElementById('selectedCount');
     if (selectedEl) selectedEl.textContent = selectedCount;
+
+    // If this exercise was already verified (including one restored from a persisted
+    // exam session), reapply the correct/wrong visual markings.
+    if (exerciseData[name].locked) {
+        const answers = exerciseData[name].answers;
+        checks.forEach((input, idx) => {
+            const label = input.parentElement;
+            const selected = input.checked;
+            const isWrong = answers[idx] ? answers[idx].isWrong : false;
+            label.classList.remove('wrong', 'correct');
+            if (selected && !isWrong) label.classList.add('wrong');
+            if (selected && isWrong) label.classList.add('correct');
+        });
+    }
 
     // Enforce disabling if max reached (or lock if exercise is verified)
     checks.forEach(cb => {
@@ -662,6 +802,8 @@ function checkAnswers() {
         msg.textContent = `Progress: ${score}/${data.wrongCount} correct.`;
         msg.style.color = "var(--text-main)";
     }
+
+    saveExamState();
 } 
 
 function triggerConfetti(options = {}) {
