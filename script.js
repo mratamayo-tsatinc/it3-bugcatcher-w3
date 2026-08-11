@@ -38,13 +38,13 @@ let studentDatabase = [];
 let exerciseData = {}; 
 let currentFile = "";
 let currentUser = "";
-let appMode = 'practice'; // 'practice' | 'exam'
-let examMinutes = 15; // default minutes for exam mode
+let appMode = 'exam'; // 'practice' | 'exam'
+let examMinutes = 30; // default minutes for exam mode
 let timerSeconds = 0;
 let timerInterval = null;
-let scoreModalShown = false;
+let scoreModalShown = true;
 // Track whether we've already shown the full-course celebration
-let totalCelebrated = false;
+let totalCelebrated = true;
 
 window.onload = async function() {
     try {
