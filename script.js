@@ -51,6 +51,10 @@ let examStartTime = null;
 const EXAM_STORAGE_PREFIX = 'bugcatcher_exam_';
 
 window.onload = async function() {
+    // The sidebar defaults to open on desktop and closed on mobile, so the
+    // hamburger button's label needs to match whichever is current.
+    initSidebarToggleLabel();
+
     try {
         const res = await fetch('students.csv');
         const text = await res.text();
@@ -61,6 +65,163 @@ window.onload = async function() {
         });
     } catch (err) { console.error("Database failed to load."); }
 };
+
+// --- HAMBURGER MENU / OFF-CANVAS SIDEBAR (mirrored from the code-ordering activity) ---
+function openSidebar() {
+    document.getElementById('sidebarNav').classList.add('sidebar-open');
+    document.getElementById('sidebarBackdrop').classList.add('show');
+    document.getElementById('sidebarToggleBtn').setAttribute('aria-expanded', 'true');
+    document.getElementById('sidebarToggleBtn').setAttribute('aria-label', 'Hide exercise list');
+    // Prevent the page behind the panel from scrolling while it's open
+    document.body.style.overflow = 'hidden';
+}
+
+function closeSidebar() {
+    document.getElementById('sidebarNav').classList.remove('sidebar-open');
+    document.getElementById('sidebarBackdrop').classList.remove('show');
+    document.getElementById('sidebarToggleBtn').setAttribute('aria-expanded', 'false');
+    document.getElementById('sidebarToggleBtn').setAttribute('aria-label', 'Show exercise list');
+    document.body.style.overflow = '';
+}
+
+function collapseDesktopSidebar() {
+    document.getElementById('sidebarNav').classList.add('sidebar-collapsed');
+    document.getElementById('sidebarToggleBtn').setAttribute('aria-expanded', 'false');
+    document.getElementById('sidebarToggleBtn').setAttribute('aria-label', 'Show exercise list');
+}
+
+function expandDesktopSidebar() {
+    document.getElementById('sidebarNav').classList.remove('sidebar-collapsed');
+    document.getElementById('sidebarToggleBtn').setAttribute('aria-expanded', 'true');
+    document.getElementById('sidebarToggleBtn').setAttribute('aria-label', 'Hide exercise list');
+}
+
+// Single entry point for the hamburger button. On mobile the sidebar is an
+// off-canvas overlay (hidden by default); on desktop it's a normal layout
+// panel (visible by default) that can be collapsed to reclaim space.
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebarNav');
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+
+    if (isMobile) {
+        if (sidebar.classList.contains('sidebar-open')) {
+            closeSidebar();
+        } else {
+            openSidebar();
+        }
+    } else {
+        if (sidebar.classList.contains('sidebar-collapsed')) {
+            expandDesktopSidebar();
+        } else {
+            collapseDesktopSidebar();
+        }
+    }
+}
+
+// Set the hamburger button's initial label to match each breakpoint's
+// default sidebar state (open on desktop, closed on mobile).
+function initSidebarToggleLabel() {
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+    const btn = document.getElementById('sidebarToggleBtn');
+    if (!btn) return;
+    if (isMobile) {
+        btn.setAttribute('aria-expanded', 'false');
+        btn.setAttribute('aria-label', 'Show exercise list');
+    } else {
+        btn.setAttribute('aria-expanded', 'true');
+        btn.setAttribute('aria-label', 'Hide exercise list');
+    }
+}
+
+// Close the off-canvas panel automatically after picking an exercise, but
+// only on screens narrow enough that the sidebar is an overlay in the
+// first place — on desktop the sidebar stays put.
+function closeSidebarIfMobile() {
+    if (window.matchMedia('(max-width: 768px)').matches) {
+        closeSidebar();
+    }
+}
+
+// Close on Escape for keyboard users (mobile overlay only)
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        const sidebar = document.getElementById('sidebarNav');
+        if (sidebar && sidebar.classList.contains('sidebar-open')) {
+            closeSidebar();
+        }
+    }
+});
+
+// --- SIDEBAR QR WATERMARK (screenshot deterrent, mirrored from the code-ordering activity) ---
+// Renders a faint, randomly-generated QR-code-like pattern behind the
+// sidebar. It isn't a real scannable code — it's just visual noise meant
+// to make it obvious/awkward if a student tries to pass off an edited
+// screenshot of their scores as the genuine app, since a fresh random
+// pattern is drawn every login.
+function classifyQrModule(x, y, moduleCount) {
+    // Three finder-pattern corners (top-left, top-right, bottom-left),
+    // each with a 1-module quiet border, like a real QR code.
+    const finderZones = [
+        { x0: 0, y0: 0 },
+        { x0: moduleCount - 7, y0: 0 },
+        { x0: 0, y0: moduleCount - 7 }
+    ];
+
+    for (const zone of finderZones) {
+        const lx = x - zone.x0;
+        const ly = y - zone.y0;
+        if (lx >= -1 && lx <= 7 && ly >= -1 && ly <= 7) {
+            if (lx < 0 || lx > 6 || ly < 0 || ly > 6) return 'blank'; // quiet zone
+            const onBorder = (lx === 0 || lx === 6 || ly === 0 || ly === 6);
+            const inCenter = (lx >= 2 && lx <= 4 && ly >= 2 && ly <= 4);
+            return (onBorder || inCenter) ? 'filled' : 'blank';
+        }
+    }
+
+    // Timing strips: alternating modules along row/column 6, outside the finders
+    if (y === 6 || x === 6) {
+        return ((x + y) % 2 === 0) ? 'filled' : 'blank';
+    }
+
+    return 'data';
+}
+
+function generateQrWatermarkDataUrl() {
+    const moduleCount = 21;
+    const moduleSize = 6;
+    const size = moduleCount * moduleSize;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    ctx.clearRect(0, 0, size, size);
+    ctx.fillStyle = 'rgba(98, 0, 238, 0.05)'; // subtle — matches the theme's primary color
+
+    for (let y = 0; y < moduleCount; y++) {
+        for (let x = 0; x < moduleCount; x++) {
+            const type = classifyQrModule(x, y, moduleCount);
+            let filled;
+            if (type === 'filled') filled = true;
+            else if (type === 'blank') filled = false;
+            else filled = Math.random() < 0.42; // random "data" noise
+
+            if (filled) {
+                ctx.fillRect(x * moduleSize, y * moduleSize, moduleSize, moduleSize);
+            }
+        }
+    }
+
+    return canvas.toDataURL('image/png');
+}
+
+function applySidebarWatermark() {
+    const sidebar = document.getElementById('sidebarNav');
+    if (!sidebar) return;
+    sidebar.style.backgroundImage = `url(${generateQrWatermarkDataUrl()})`;
+    sidebar.style.backgroundRepeat = 'repeat';
+}
 
     // EXAM PERSISTENCE (only used while appMode === 'exam')
     function getExamStorageKey(email) {
@@ -256,6 +417,7 @@ function handleLogin() {
         document.getElementById('loginOverlay').style.display = 'none';
         document.getElementById('appContainer').style.display = 'flex';
         document.getElementById('userDisplay').textContent = email;
+        applySidebarWatermark();
 
         if (appMode === 'exam') {
             // Look for a previously saved session for this student (e.g. after a refresh
@@ -320,11 +482,15 @@ async function loadAllExercises() {
                 <span>${fileName.replace('.java', '')}</span>
                 <span class="nav-score" id="score-${safeId}">${restoredScore}/${exerciseData[fileName].wrongCount}</span>
             `;
-            if (exerciseData[fileName].locked && exerciseData[fileName].wrongCount > 0 && restoredScore === exerciseData[fileName].wrongCount) {
-                li.querySelector('.nav-score').classList.add('completed-score');
+            if (exerciseData[fileName].locked && exerciseData[fileName].wrongCount > 0) {
+                if (restoredScore === exerciseData[fileName].wrongCount) {
+                    li.querySelector('.nav-score').classList.add('completed-score');
+                } else if (restoredScore > 0) {
+                    li.querySelector('.nav-score').classList.add('partial-score');
+                }
             }
             
-            li.onclick = () => switchExercise(fileName, li);
+            li.onclick = () => { switchExercise(fileName, li); closeSidebarIfMobile(); };
             list.appendChild(li);
         } catch (e) { console.warn("Missing: " + fileName); }
     }
@@ -381,7 +547,7 @@ function resetCurrentExercise() {
     const safeId = currentFile.replace(/\./g, '-');
     const scoreSpan = document.getElementById(`score-${safeId}`);
     if (scoreSpan) scoreSpan.textContent = `0/${data.wrongCount}`;
-    scoreSpan.classList.remove('completed-score');
+    scoreSpan.classList.remove('completed-score', 'partial-score');
 
     // reset UI
     const verifyBtn = document.getElementById('verifyBtn');
@@ -429,6 +595,15 @@ function updateTotalScore() {
         if (allAnswered && totalMax > 0 && !scoreModalShown) {
             showScoreModal('complete');
         }
+    }
+
+    // Keep the sidebar QR code in sync with the running total, same as the
+    // line-ordering activity. Encryption is async, so this fires and
+    // updates the QR once ready.
+    if (currentUser) {
+        buildResultsShareUrl(totalCorrect, totalMax).then(shareUrl => {
+            renderQrInto('sidebarQrCodeBox', shareUrl, 110);
+        });
     }
 }
 
@@ -553,36 +728,70 @@ function parseJavaCode(raw) {
      * In the new format:
      * - Only bugs are wrapped with [[ ]]
      * - All wrapped tokens are considered bugs
-     * - Process: Extract bug markers → Remove markers → Tokenize clean code → Match bugs → Build HTML
+     * - Process: Extract bug markers (tracking their exact character offset in the
+     *   clean code) → Tokenize clean code (tracking each token's start offset) →
+     *   Match bugs to tokens by OFFSET (not just text) → Build HTML
+     *
+     * NOTE: Matching used to be done by scanning forward for the next token whose
+     * TEXT equalled the marker's text. That breaks whenever the buggy token's text
+     * also appears earlier in the file as a legitimate token (e.g. a stray extra
+     * '<' in an #include line, or a mistyped '{' where a '}' belongs while main()
+     * also has a real '{') — the marker would bind to the wrong, earlier
+     * occurrence, silently flagging a correct token as "the bug" while leaving the
+     * real bug unflagged. Matching by exact source offset fixes this for every
+     * exercise that shares this duplicate-token pattern, not just this one file.
      */
 
-    // Step 1: Extract bug markers from [[...]] patterns
-    const bugMarkers = [];
-    const cleanCode = raw.replace(/\[\[(.*?)\]\]/g, (match, content) => {
-        const tokenText = content.trim();
-        // In the new format, all wrapped tokens are bugs
-        bugMarkers.push({ text: tokenText, isBug: true });
-        // Return just the token text without markers
-        return tokenText;
+    // Step 1: Single pass over the raw source. Copy everything through to
+    // cleanCode, and whenever a [[...]] marker is found, record the exact
+    // offset (within cleanCode) where its unwrapped text starts.
+    const bugMarkers = []; // { offset, text }
+    let cleanCode = '';
+    {
+        let i = 0;
+        const len = raw.length;
+        while (i < len) {
+            if (raw[i] === '[' && raw[i + 1] === '[') {
+                let j = i + 2;
+                let content = '';
+                while (j < len && !(raw[j] === ']' && raw[j + 1] === ']')) {
+                    content += raw[j];
+                    j++;
+                }
+                const tokenText = content.trim();
+                bugMarkers.push({ offset: cleanCode.length, text: tokenText });
+                cleanCode += tokenText;
+                i = j + 2; // skip past the closing ]]
+            } else {
+                cleanCode += raw[i];
+                i++;
+            }
+        }
+    }
+
+    // Step 2: Tokenize the clean code, then compute each token's exact start
+    // offset within cleanCode by walking the tokens in emitted order (they
+    // consume cleanCode contiguously, so cumulative length == offset).
+    const rawTokens = tokenizeCode(cleanCode);
+    let cursor = 0;
+    const tokens = rawTokens.map(t => {
+        const start = cursor;
+        cursor += t.text.length;
+        return { ...t, start };
     });
 
-    // Step 2: Tokenize the clean code
-    const tokens = tokenizeCode(cleanCode);
+    // Build a lookup of bug offset -> bug text for quick matching.
+    const bugByOffset = new Map();
+    bugMarkers.forEach(b => bugByOffset.set(b.offset, b.text));
 
-    // Step 3: Match bug markers to tokens in order
+    // Step 3: Match bug markers to tokens by OFFSET, not by text-only scanning.
     const answers = [];
     const userProgress = [];
     const codeTokens = tokens.filter(t => t.type === 'code');
-    
-    // Build answer array by matching tokens with tracked bugs
-    let bugIndex = 0;
+
     codeTokens.forEach(token => {
-        let isWrong = false;
-        // Check if this token was marked as a bug in the original source
-        if (bugIndex < bugMarkers.length && bugMarkers[bugIndex].text === token.text) {
-            isWrong = bugMarkers[bugIndex].isBug;
-            bugIndex++;
-        }
+        const markedText = bugByOffset.get(token.start);
+        const isWrong = markedText !== undefined && markedText === token.text;
         answers.push({ token: token.text, isWrong });
         userProgress.push(false);
     });
@@ -791,6 +1000,7 @@ function checkAnswers() {
     updateTotalScore();
 
     const msg = document.getElementById('feedback');
+    scoreSpan.classList.remove('completed-score', 'partial-score');
     if (score === data.wrongCount) {
         scoreSpan.classList.add('completed-score');
         msg.textContent = "✨ Perfect! Activity Complete! ✨";
@@ -798,7 +1008,7 @@ function checkAnswers() {
         // smaller celebratory burst for a single exercise
         triggerConfetti({ type: 'exercise' });
     } else {
-        scoreSpan.classList.remove('completed-score');
+        if (score > 0) scoreSpan.classList.add('partial-score');
         msg.textContent = `Progress: ${score}/${data.wrongCount} correct.`;
         msg.style.color = "var(--text-main)";
     }
@@ -855,6 +1065,100 @@ function exportProgress() {
     a.click();
 }
 
+// --- QR PAYLOAD ENCRYPTION (mirrored from the line-ordering activity) ---
+// Runs entirely in the browser, so this passphrase is visible to anyone who
+// reads this file — it is NOT a security boundary. It only keeps the
+// score/email/timestamp out of the *plain* QR payload/URL so a casual scan
+// or glance at the address bar doesn't show readable data.
+const QR_SHARED_PASSPHRASE = 'AA-9002341ds2sd14-dsfs12sd-54231hg';
+const QR_SALT_STRING = 'java-activity-qr-salt-v1';
+
+async function deriveQrKey() {
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey(
+        'raw',
+        enc.encode(QR_SHARED_PASSPHRASE),
+        { name: 'PBKDF2' },
+        false,
+        ['deriveKey']
+    );
+    return crypto.subtle.deriveKey(
+        {
+            name: 'PBKDF2',
+            salt: enc.encode(QR_SALT_STRING),
+            iterations: 100000,
+            hash: 'SHA-256'
+        },
+        keyMaterial,
+        { name: 'AES-GCM', length: 256 },
+        false,
+        ['encrypt', 'decrypt']
+    );
+}
+
+function bufferToBase64Url(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    bytes.forEach(b => binary += String.fromCharCode(b));
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function encryptQrPayload(dataObj) {
+    const key = await deriveQrKey();
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const enc = new TextEncoder();
+    const plaintext = enc.encode(JSON.stringify(dataObj));
+    const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, plaintext);
+
+    const combined = new Uint8Array(iv.length + ciphertext.byteLength);
+    combined.set(iv, 0);
+    combined.set(new Uint8Array(ciphertext), iv.length);
+
+    return bufferToBase64Url(combined);
+}
+
+function getCleanSourceUrl() {
+    return window.location.href.split(/[?#]/)[0].replace(/^https?:\/\//i, '');
+}
+
+function getActivityName() {
+    return document.title;
+}
+
+async function buildResultsShareUrl(rawScore, maxScore) {
+    const payload = {
+        e: currentUser,
+        t: Math.floor(Date.now() / 1000),
+        s: rawScore,
+        m: maxScore
+    };
+
+    const token = await encryptQrPayload(payload);
+    const url = new URL('https://mratamayo-tsatinc.github.io/qr/it5b-w4.html');
+    url.searchParams.set('d', token);
+    url.searchParams.set('a', getCleanSourceUrl());
+    url.searchParams.set('n', getActivityName());
+    return url.toString();
+}
+
+function renderQrInto(boxId, shareUrl, size) {
+    const box = document.getElementById(boxId);
+    if (!box || typeof QRCode === 'undefined') return;
+    box.innerHTML = '';
+    new QRCode(box, {
+        text: shareUrl,
+        width: size,
+        height: size,
+        colorDark: '#1a1a1a',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.L
+    });
+}
+
+function renderResultsQrCode(shareUrl) {
+    renderQrInto('qrCodeBox', shareUrl, 200);
+}
+
 // Show score modal; reason: 'complete' | 'time'
 function showScoreModal(reason) {
     if (scoreModalShown) return;
@@ -874,6 +1178,11 @@ function showScoreModal(reason) {
         }
         breakdown.innerHTML = html;
     }
+
+    buildResultsShareUrl(totalCorrect, totalMax).then(shareUrl => {
+        renderResultsQrCode(shareUrl);
+    });
+
     const m = document.getElementById('scoreModal'); if (m) m.style.display = 'flex';
 }
 
